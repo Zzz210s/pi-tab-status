@@ -1,22 +1,32 @@
 // render.ts - pi-tab-status 纯渲染:有效视图 -> 终端标题字符串。
 //
 // 标题格式:{状态字形} {shell 标识} [{状态详情}]。
-// - 无旋转动画(working 用固定 ◑),标题仅在状态切换时变化,写入极低频,
-//   避免高频 OSC 0 触发 ConEmu 标签渲染冻结(实际踩过的坑)
+// - working(模型生成中)用旋转帧 ◐◓◑◒(120ms 级轮换,与 Claude Code 同风格);
+//   字形为固定宽度几何字符(U+25D0-25D3),避免宽度抖动
+// - tool(执行工具)用 ▸(U+25B8):方向感对应"执行",与旋转帧区分
+// - 其余状态静态字形,标题仅状态切换时变化
 // - shell 标识恢复"原来的样子":按启动环境探测(Windows PowerShell /
 //   Git Bash),可用 PI_TAB_STATUS_BASE 覆盖
 // - 字形全部非 emoji 等宽几何/标点字符
 export type { EffectiveView } from "./view.ts";
 
-/** 各状态前缀字形(非 emoji,固定不动画)。 */
+/** 旋转帧:固定宽度几何字符(working 态轮换)。 */
+export const SPINNER_FRAMES = ["◐", "◓", "◑", "◒"] as const;
+
+/** 各状态前缀字形(非 emoji)。 */
 export const GLYPH = {
   idle: "·",
-  working: "◑",
-  tool: "●",
+  tool: "▸",
   waiting: "‖",
   stalled: "?",
   error: "×",
 } as const;
+
+/** 按挂钟时间取当前旋转帧(无需内部计数器,天然连续)。 */
+export function spinnerFrame(now: number, intervalMs: number): string {
+  const i = Math.floor(now / Math.max(1, intervalMs)) % SPINNER_FRAMES.length;
+  return SPINNER_FRAMES[i];
+}
 
 /** 按扩展进程环境(pi 从哪个 shell 启动)探测"原来的"标签标识。 */
 export function shellTitle(env: Record<string, string | undefined>): string {
@@ -26,12 +36,17 @@ export function shellTitle(env: Record<string, string | undefined>): string {
 }
 
 /** 组装标题。base 由入口提供(shell 标识或自定义)。 */
-export function renderTitle(view: EffectiveView, base: string): string {
+export function renderTitle(
+  view: EffectiveView,
+  base: string,
+  now: number,
+  spinnerIntervalMs: number
+): string {
   switch (view.kind) {
     case "idle":
       return `${GLYPH.idle} ${base}`;
     case "working":
-      return `${GLYPH.working} ${base}`;
+      return `${spinnerFrame(now, spinnerIntervalMs)} ${base}`;
     case "tool":
       return `${GLYPH.tool} ${base} (${view.tool})`;
     case "waiting":

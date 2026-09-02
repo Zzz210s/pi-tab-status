@@ -44,7 +44,7 @@ const last = () => titles[titles.length - 1] ?? '(无)';
 console.log('\n[1] session_start ->', (await fire('session_start'), last()));
 await fire('before_agent_start', {});
 await fire('agent_start');
-console.log('[2] agent_start(工作态 ◑ 静态)->', last());
+console.log('[2] agent_start(工作态旋转)->', last());
 await fire('message_update', {});
 console.log('[3] 流式中 ->', last());
 

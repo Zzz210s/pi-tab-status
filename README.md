@@ -16,7 +16,7 @@
 
 在 Windows 终端(Cmder / Windows Terminal)里跑多个 pi 会话时,无法从标签页一眼判断每个会话的状态:是在跑、在等确认、出错重试,还是已经完成。本扩展在标签标题前加状态字形,状态一目了然;标题其余部分保持"原来的样子"(启动 shell 的标识,如 Windows PowerShell)。
 
-设计上刻意**不做旋转动画**:标题完全静态,仅在状态切换时写入——高频重写标题(如 Claude Code 的 80-120ms 旋转帧)在 Cmder(ConEmu)实际测试中会触发标签渲染冻结,重启终端才能恢复。工作状态的视觉信号由任务栏进度(OSC 9;4 不确定态动画,ConEmu 原生渲染)承担。
+生成中用固定宽度旋转帧(◐◓◑◒,与 Claude Code 同风格)直观呈现"正在思考";若所在终端的标签渲染在高频标题更新下异常(实测 Cmder 偶发冻结,重启终端即恢复),可用 `PI_TAB_STATUS_SPINNER_MS` 调大帧间隔。
 
 ## 安装
 
@@ -34,8 +34,8 @@ bash ~/pi-tab-status/setup.sh
 扩展自动激活,无需任何操作。标签页标题 = 状态字形 + shell 标识(以 PowerShell 启动为例):
 
 - `· Windows PowerShell`:空闲(会话刚启动/重载,立即可见)
-- `◑ Windows PowerShell`:模型生成中(静态字形;任务栏进度条滚动)
-- `● Windows PowerShell (bash)`:正在执行工具
+- 旋转的半圆字形(`◐◓◑◒` 轮换)+ `Windows PowerShell`:模型生成中;任务栏进度条同步滚动
+- `▸ Windows PowerShell (bash)`:正在执行工具(方向三角对应"执行",与旋转帧区分)
 - `‖ Windows PowerShell (confirm)`:等待用户确认/输入(permission-gate 等扩展弹框时)
 - `? Windows PowerShell (no activity)`:疑似卡住(超过阈值无任何事件;可附 `, HTTP 429`)
 - `× Windows PowerShell (HTTP 429)`:provider 请求失败,任务栏进度变红
@@ -54,7 +54,7 @@ bash ~/pi-tab-status/setup.sh
 | --- | --- | --- |
 | `PI_TAB_STATUS_STALL_MS` | `15000`(15 秒) | 卡住判定阈值:工作/工具态下超过该时长无任何事件即显示 `?` |
 | `PI_TAB_STATUS_BASE` | 自动探测 | 标题基础文本;默认按启动环境探测(Windows PowerShell / Git Bash / bash) |
-| `PI_TAB_STATUS_TICK_MS` | `250` | 状态检查周期(仅影响状态切换延迟,不影响写入频率) |
+| `PI_TAB_STATUS_SPINNER_MS` | `120` | 旋转帧间隔(毫);也是状态检查周期 |
 | `PI_TAB_STATUS_PROGRESS` | 启用 | 设为 `0` 关闭 OSC 进度写入,仅保留标题 |
 | `PI_TAB_STATUS` | 启用 | 设为 `0` 完全关闭扩展 |
 | `PI_TAB_STATUS_DEBUG` | 关闭 | 设为 `1`(或 touch `~/.pi/agent/tab-status-debug`)开启文件日志排查问题 |
@@ -66,8 +66,8 @@ bash ~/pi-tab-status/setup.sh
 | 状态 | 触发(pi 事件) | 标题字形 | OSC 进度 |
 | --- | --- | --- | --- |
 | 空闲/完成 | `agent_settled` / `session_start` | `·` | 清除(0) |
-| 生成中 | `agent_start` / `message_update` | `◑`(静态) | 不确定(3) |
-| 执行工具 | `tool_execution_start` | `●` + 工具名 | 不确定(3) |
+| 生成中 | `agent_start` / `message_update` | `◐◓◑◒` 旋转 | 不确定(3) |
+| 执行工具 | `tool_execution_start` | `▸` + 工具名 | 不确定(3) |
 | 等待用户 | `ui_prompt_start` / `ui_prompt_end` | `‖` + 提示类型 | 暂停(4) |
 | 疑似卡住 | 超阈值无事件(派生) | `?` | 不确定(3) |
 | 请求出错 | `after_provider_response` status >= 400 | `×` + 状态码 | 错误(2) |
@@ -80,16 +80,15 @@ bash ~/pi-tab-status/setup.sh
 
 - `extensions/tab-status/state.ts` — 纯状态机:pi 事件归约为相位(idle/working/tool/waiting),维护活动时间戳与错误上下文。零 pi 依赖,可单测。
 - `extensions/tab-status/view.ts` — 有效视图派生:相位 + 时间 -> 渲染视图;卡住态不落状态机、按活动时间派生,新事件到来自动恢复;含优先级判定。
-- `extensions/tab-status/render.ts` — 纯渲染:视图转标题字符串、shell 标识探测、OSC 进度序列。字形全部为非 emoji 等宽字符,无动画。
+- `extensions/tab-status/render.ts` — 纯渲染:视图转标题字符串、旋转帧、shell 标识探测、OSC 进度序列。字形全部为非 emoji 等宽字符。
 - `extensions/tab-status/debug.ts` — 文件式调试日志(开关:touch `~/.pi/agent/tab-status-debug`)。
-- `extensions/tab-status.ts` — 入口:环境守卫(非 TTY/Warp/显式关闭)、事件接线、单一低频 ticker(标题字符串变化才写,进度仅状态切换时写);标题/进度直写 stdout(与 pi-tui 同路径,不经过 ctx.ui 链);tick 全程 try/catch。
+- `extensions/tab-status.ts` — 入口:环境守卫(非 TTY/Warp/显式关闭)、事件接线、单一 ticker(标题字符串变化才写,进度仅状态切换时写);标题/进度直写 stdout(与 pi-tui 同路径,不经过 ctx.ui 链);tick 全程 try/catch。
 
 关键取舍(基于对同类开源项目的调研与实测):
 
-- **复刻 Claude Code 的 OSC 0 标题驱动**,而非外部监视(herdr/tmux 方案):Windows Terminal 与 Cmder 均无外部读取标签页标题的 API,进程内驱动是 Windows 上唯一可行路径。
+- **不做任务简述、不做外部监视**:标题保持"原 shell 标识 + 状态字形"的简洁形态;外部监视(herdr/tmux 方案)在 Windows Terminal 与 Cmder 均无读取标签标题的 API,进程内驱动是唯一可行路径。
 - **不做旋转动画**:实测 Cmder(ConEmu)在持续高频 OSC 0 下标签渲染会冻结(重启才恢复),静态标题 + 任务栏进度动画是稳妥组合;Claude 的动画在 WT/Ghostty 等现代终端无此问题,若主力终端切换可恢复动画(改 render 即可)。
 - **卡住检测用进程内事件时间戳**而非轮询会话文件(tmux 插件方案):零延迟零 IO;`before_provider_request` 计为活动(请求等待首字节不算卡),provider 重试退避期间保留错误显示。
-- **权限等待直接用 pi 的 `ui_prompt_start` 事件**:无需桥接或修改 permission-gate 等扩展,任何扩展弹框都会触发。
 
 ## 开发
 

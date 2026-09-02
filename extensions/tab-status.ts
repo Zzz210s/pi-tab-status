@@ -1,9 +1,9 @@
 /**
  * pi-tab-status:pi 会话标签页状态扩展(Windows Terminal / Cmder(ConEmu) / WezTerm / Ghostty...)。
  *
- * 标题格式:{状态字形} {shell 标识} [{状态详情}] —— 无旋转动画、无任务简述,
- * 标题完全静态,仅在状态切换时写入(低频,避免高频 OSC 0 触发 ConEmu 渲染冻结)。
- * 状态字形(非 emoji 等宽):◑ 生成中 / ● 执行工具 / ‖ 等待用户 /
+ * 标题格式:{状态字形} {shell 标识} [{状态详情}] —— working 态旋转帧 ◐◓◑◒ 轮换,
+ * 其余状态静态,仅状态切换时写入。状态字形(非 emoji 等宽):
+ * 旋转帧 生成中 / ▸ 执行工具 / ‖ 等待用户 /
  * ? 疑似卡住(超阈值无事件) / × 请求出错 / · 空闲完成。
  * shell 标识恢复"原来的样子":按启动环境探测(Windows PowerShell / Git Bash),
  * 可用 PI_TAB_STATUS_BASE 覆盖;退出时恢复纯标识标题。
@@ -18,7 +18,7 @@
  * 配置(环境变量):
  * - PI_TAB_STATUS_STALL_MS    卡住判定阈值,默认 15000(15 秒)
  * - PI_TAB_STATUS_BASE        自定义标题基础文本(默认自动探测 shell 标识)
- * - PI_TAB_STATUS_TICK_MS     状态检查周期,默认 250(仅影响状态切换延迟,不影响写入频率)
+ * - PI_TAB_STATUS_SPINNER_MS  旋转帧间隔,默认 120(状态检查周期同步为其值)
  * - PI_TAB_STATUS_PROGRESS=0  关闭 OSC 进度写入(仅保留标题)
  *
  * 调试:touch ~/.pi/agent/tab-status-debug 开启文件日志(详见 tab-status/debug.ts)。
@@ -32,7 +32,7 @@ import { renderTitle, progressStateFor, progressSequence, shellTitle } from "./t
 import { debugEnabled, debugLog } from "./tab-status/debug.ts";
 
 const STALL_MS = numEnv("PI_TAB_STATUS_STALL_MS", 15_000);
-const TICK_MS = numEnv("PI_TAB_STATUS_TICK_MS", 250);
+const SPINNER_MS = numEnv("PI_TAB_STATUS_SPINNER_MS", 120);
 const PROGRESS_ENABLED = process.env.PI_TAB_STATUS_PROGRESS !== "0";
 const DEBUG = debugEnabled();
 
@@ -59,7 +59,7 @@ export default function tabStatus(pi: ExtensionAPI) {
   let lastProgress: number | null = null;
 
   if (DEBUG) {
-    debugLog(`loaded stallMs=${STALL_MS} tickMs=${TICK_MS} base="${BASE}" progress=${PROGRESS_ENABLED} pid=${process.pid}`);
+    debugLog(`loaded stallMs=${STALL_MS} spinnerMs=${SPINNER_MS} base="${BASE}" progress=${PROGRESS_ENABLED} pid=${process.pid}`);
   }
 
   // ---------- 标题与进度的唯一出口(直写 stdout,与 pi-tui 同路径) ----------
@@ -76,8 +76,9 @@ export default function tabStatus(pi: ExtensionAPI) {
 
   function tick(): void {
     try {
-      const view = effectiveView(machine.snapshot(), Date.now(), STALL_MS);
-      const title = renderTitle(view, BASE);
+      const now = Date.now();
+      const view = effectiveView(machine.snapshot(), now, STALL_MS);
+      const title = renderTitle(view, BASE, now, SPINNER_MS);
       if (title !== lastTitle) {
         lastTitle = title;
         setTitleRaw(title);
@@ -92,7 +93,7 @@ export default function tabStatus(pi: ExtensionAPI) {
 
   function startTicker(): void {
     if (timer) return;
-    timer = setInterval(tick, TICK_MS);
+    timer = setInterval(tick, SPINNER_MS);
   }
 
   function stopTicker(): void {
