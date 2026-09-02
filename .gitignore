@@ -1,0 +1,15 @@
+# AI 运行文件/编辑产物不入库
+AGENTS.md
+CLAUDE.md
+.claude/
+.ccto/
+.cursor/
+.aider*
+.codegraph/
+.playwright-mcp/
+docs/superpowers/
+**/REBUILD_REPORT.md
+
+# Node
+node_modules/
+*.log

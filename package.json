@@ -1,0 +1,29 @@
+{
+  "name": "pi-tab-status",
+  "version": "0.2.0",
+  "description": "pi coding agent tab-title status extension: static state glyphs + shell title + OSC progress",
+  "type": "module",
+  "license": "MIT",
+  "author": "Zzz210s",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zzz210s/pi-tab-status.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Zzz210s/pi-tab-status/issues"
+  },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "extension",
+    "terminal",
+    "tab-title",
+    "status",
+    "conemu",
+    "windows-terminal"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}
