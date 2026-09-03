@@ -7,12 +7,14 @@ import {
   progressSequence,
   shellTitle,
   spinnerFrame,
+  blinkFrame,
   GLYPH,
   SPINNER_FRAMES,
 } from './render.ts';
 
 const BASE = 'Windows PowerShell';
 const SPIN = 120;
+const BLINK = 600;
 
 test('shellTitle:按启动环境探测"原来的"标识', () => {
   assert.equal(shellTitle({ MSYSTEM: 'MINGW64' }), 'Git Bash');
@@ -30,6 +32,13 @@ test('spinnerFrame 按挂钟轮换且覆盖全部帧', () => {
   assert.equal(seen.size, SPINNER_FRAMES.length);
 });
 
+test('blinkFrame 按挂钟交替下划线/空格(同宽不抖)', () => {
+  assert.equal(blinkFrame(0, BLINK), '_');
+  assert.equal(blinkFrame(BLINK, BLINK), ' ');
+  assert.equal(blinkFrame(BLINK * 2, BLINK), '_');
+  assert.equal(blinkFrame(BLINK * 3, BLINK), ' ');
+});
+
 test('idle 标题:中点前缀', () => {
   assert.equal(renderTitle({ kind: 'idle' }, BASE, 0, SPIN), `· ${BASE}`);
 });
@@ -45,8 +54,16 @@ test('tool 标题:实心三角 ▸ + 工具名', () => {
   assert.equal(renderTitle({ kind: 'tool', tool: 'bash' }, BASE, 0, SPIN), `▸ ${BASE} (bash)`);
 });
 
-test('waiting 标题:双竖线 + 提示类型', () => {
-  assert.equal(renderTitle({ kind: 'waiting', promptKind: 'confirm' }, BASE, 0, SPIN), `‖ ${BASE} (confirm)`);
+test('waiting 标题:闪烁下划线(_ 与空格交替,同宽)', () => {
+  assert.equal(
+    renderTitle({ kind: 'waiting', promptKind: 'confirm' }, BASE, 0, SPIN, BLINK),
+    `_ ${BASE} (confirm)`
+  );
+  // 空格帧:同位置变为空白,总宽不变(光标隐现效果)
+  assert.equal(
+    renderTitle({ kind: 'waiting', promptKind: 'confirm' }, BASE, BLINK, SPIN, BLINK),
+    `  ${BASE} (confirm)`
+  );
 });
 
 test('stalled 标题:问号 + no activity,可带 HTTP 上下文', () => {
@@ -73,7 +90,7 @@ test('progressSequence 与 pi-tui 内置写法一致(仅状态,不带百分比)'
 });
 
 test('所有输出字形均非 emoji(等宽几何/标点)', () => {
-  const glyphs = [...SPINNER_FRAMES, ...Object.values(GLYPH)];
+  const glyphs = [...SPINNER_FRAMES, ...Object.values(GLYPH), '_', ' '];
   for (const g of glyphs) {
     for (const ch of g) {
       const cp = ch.codePointAt(0);

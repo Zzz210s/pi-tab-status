@@ -1,6 +1,6 @@
 {
   "name": "pi-tab-status",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "pi coding agent tab-title status extension: static state glyphs + shell title + OSC progress",
   "type": "module",
   "license": "MIT",

@@ -63,7 +63,9 @@ await fire('after_provider_response', { status: 429, headers: {} });
 console.log('[7] HTTP 429 ->', last());
 
 await fire('ui_prompt_start', { type: 'ui_prompt_start', reason: 'ui_prompt', kind: 'confirm', title: '允许?' });
-console.log('[8] 等待用户确认 ->', last());
+console.log('[8] 等待用户确认(闪烁帧 1)->', last());
+await wait(700); // 跨过一个闪烁周期(600ms)
+console.log('    等待用户确认(闪烁帧 2)->', last());
 await fire('ui_prompt_end', { type: 'ui_prompt_end', reason: 'ui_prompt', kind: 'confirm' });
 
 await fire('after_provider_response', { status: 200, headers: {} });
