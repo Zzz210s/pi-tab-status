@@ -90,13 +90,13 @@ Five modules, pure logic separated from side effects (same style as the chrome-d
 Key trade-offs (from surveying and testing similar open-source projects):
 
 - **No task summary, no external watcher**: the title stays "original shell label + status glyph"; external watchers (herdr/tmux approaches) have no API to read tab titles in Windows Terminal or Cmder, so in-process driving is the only viable path.
-- **No rotating animation** (in the committed render): under sustained high-frequency OSC 0 writes, Cmder (ConEmu) tab rendering can freeze (recovery = restart); static title + taskbar animation is the safe combo. Claude-style animation is fine on modern terminals (WT/Ghostty); switching render is easy if your main terminal changes.
+- **Rotation restored with a safety valve**: the generating state rotates spinner frames; if a terminal's tab rendering ever misbehaves under sustained high-frequency OSC 0 writes (Cmder occasionally froze in testing; recovery = restart), raise the frame interval via `PI_TAB_STATUS_SPINNER_MS` instead of losing the animation.
 - **Stall detection uses in-process event timestamps** rather than polling session files (tmux-plugin style): zero latency, zero IO; `before_provider_request` counts as activity (waiting for first byte is not a stall), and the error display persists during provider retry backoff.
 
 ## Development
 
 ```bash
-npm test          # node --test, 24 cases (state machine + view + render)
+npm test          # node --test, 26 cases (state machine + view + render)
 npm run smoke     # end-to-end entry smoke: mock pi walks a full event cycle, prints the title timeline
 bash setup.sh --test   # deploy to ~/.pi/agent/extensions/ after tests pass
 ```
