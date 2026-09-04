@@ -1,6 +1,6 @@
 {
   "name": "pi-tab-status",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "pi coding agent tab-title status extension: state glyphs (spinner/blink) + shell label + OSC 9;4 taskbar progress",
   "type": "module",
   "license": "MIT",
@@ -32,7 +32,9 @@
     "LICENSE"
   ],
   "pi": {
-    "extensions": ["./extensions"]
+    "extensions": [
+      "./extensions"
+    ]
   },
   "scripts": {
     "test": "node --test",
