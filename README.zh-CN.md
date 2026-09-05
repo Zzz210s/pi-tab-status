@@ -2,7 +2,7 @@
 
 **[English](./README.md) | 简体中文**
 
-[pi coding agent](https://github.com/earendil-works/pi-coding-agent) 的标签页标题 + 任务栏进度扩展:**标签标题固定显示当前会话名**(不再随状态跳动),活动状态经 Windows 任务栏进度呈现。
+[pi coding agent](https://github.com/earendil-works/pi-coding-agent) 的标签页标题 + 任务栏进度扩展:标题 = **状态字形 + 会话名**(字形随状态切换,命名固定可读),活动状态同步 Windows 任务栏进度。
 
 ## 目录
 
@@ -16,9 +16,18 @@
 
 ## 背景
 
-在 Windows 终端(Cmder / Windows Terminal)里跑多个 pi 会话时,需要能一眼认出"这个标签是哪个会话"。本扩展让标签页标题**静态显示会话名**(用 `/name` 起名,未命名则显示启动 shell 的标识),标题在整个会话中不随内部状态变化——只有重命名时才更新,彻底规避高频标题写入(实测 Cmder 偶发渲染冻结)与状态闪烁。
+在 Windows 终端(Cmder / Windows Terminal)里跑多个 pi 会话时,需要能一眼认出"这个标签是哪个会话"。本扩展让标签页标题**显示会话名**(用 `/name` 起名,未命名则显示启动 shell 的标识),前面带**状态字形**:
 
-活动状态交给 **Windows 任务栏进度**(OSC 9;4,ConEmu 协议):生成/执行工具/疑似卡住时滚动,等你确认时暂停,请求出错变红,完成清除——不占用标签页标题,信息不丢。
+- 生成中:旋转帧 ◐◓◑◒ 轮换(120ms,Claude Code 同风格)
+- 等待用户:`_` 闪烁(与空格同宽交替,终端光标式)
+- 执行工具:`▸` + 工具名
+- 疑似卡住:`?`(超阈值无事件)
+- 请求出错:`×`(附 HTTP 状态)
+- 空闲/完成:`·`
+
+字形均为非 emoji 等宽字符,轮换同宽不抖;**命名部分全程固定**(仅重命名时更新)——多开窗口按名认会话,状态由字形 + 任务栏双通道呈现。
+
+若终端标签渲染在高频标题更新下异常(实测 Cmder 偶发冻结,重启终端即恢复),调大 `PI_TAB_STATUS_SPINNER_MS` 帧间隔即可缓解。
 
 ## 安装
 
@@ -33,11 +42,12 @@ bash ~/pi-tab-status/setup.sh
 
 ## 使用
 
-扩展自动激活。**标签页标题 = 当前会话名**(未命名则回退启动 shell 标识,如 `Windows PowerShell`):
+扩展自动激活。**标签页标题 = {状态字形} 会话名**(未命名会话回退启动 shell 标识,如 `Windows PowerShell`):
 
-1. 给会话起名:pi 内执行 `/name 会话名`(或扩展 API `setSessionName`)——**标题立即更新为该名**,此后不再变化
-2. 活动状态看任务栏:工作滚动、等你确认暂停、出错红、空闲清除
-3. 退出 pi:标题恢复 shell 标识
+1. 给会话起名:pi 内执行 `/name 会话名`(或扩展 API `setSessionName`)——标题主文本立即更新为该名(字形仍随状态动)
+2. 状态一眼可见:生成中字形旋转、工具执行 `▸`、等确认 `_` 闪烁、卡住 `?`、出错 `×`
+3. Windows 任务栏:工作滚动、等你确认暂停、出错红、空闲清除
+4. 退出 pi:标题恢复 shell 标识
 
 > 会话名也会显示在 pi 的会话选择器里,替代首条消息。
 
@@ -47,8 +57,10 @@ bash ~/pi-tab-status/setup.sh
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `PI_TAB_STATUS_BASE` | 自动探测 | 无会话名时的标题文本(默认按启动环境:Windows PowerShell / Git Bash / bash) |
-| `PI_TAB_STATUS_STALL_MS` | `15000` | 卡住判定阈值:工作/工具期间超过此时长无事件,进度按"疑似卡住"(仍滚动)处理 |
+| `PI_TAB_STATUS_BASE` | 自动探测 | 无会话名时的标题主文本(默认按启动环境:Windows PowerShell / Git Bash / bash) |
+| `PI_TAB_STATUS_STALL_MS` | `15000` | 卡住判定阈值:工作/工具期间超过此时长无事件,标题显 `?` |
+| `PI_TAB_STATUS_SPINNER_MS` | `120` | 旋转帧间隔(也是状态检查周期);标签渲染异常时调大 |
+| `PI_TAB_STATUS_BLINK_MS` | `600` | 等待态闪烁帧间隔(下划线/空格交替,同宽) |
 | `PI_TAB_STATUS_PROGRESS` | `on` | `0` 关闭 OSC 进度写入(仅保留标题) |
 | `PI_TAB_STATUS` | `on` | `0` 整体关闭扩展 |
 | `PI_TAB_STATUS_DEBUG` | `off` | `1`(或 touch `~/.pi/agent/tab-status-debug`)开启文件日志排查 |
@@ -57,36 +69,36 @@ bash ~/pi-tab-status/setup.sh
 
 | 状态 | 触发(pi 事件) | 标签页标题 | 任务栏进度(OSC 9;4) |
 |---|---|---|---|
-| 空闲/完成 | agent_settled / session_start | 不变(会话名) | 清除(0) |
-| 生成中 | agent_start / message_* | 不变(会话名) | indeterminate(3)滚动 |
-| 工具执行 | tool_execution_* | 不变(会话名) | indeterminate(3)滚动 |
-| 等待用户 | ui_prompt_start | 不变(会话名) | paused(4)暂停 |
-| 疑似卡住 | 超阈值无事件(派生) | 不变(会话名) | indeterminate(3)滚动 |
-| 请求出错 | after_provider_response >= 400 | 不变(会话名) | error(2)变红 |
-| 会话更名 | /name、RPC 或 setSessionName | **更新为新会话名**(唯一变化时机) | 不变 |
+| 空闲/完成 | agent_settled / session_start | `· 会话名` | 清除(0) |
+| 生成中 | agent_start / message_* | `◐◓◑◒` 轮换 + 会话名 | indeterminate(3)滚动 |
+| 工具执行 | tool_execution_* | `▸ 会话名 (工具名)` | indeterminate(3)滚动 |
+| 等待用户 | ui_prompt_start | `_` 闪烁 + 会话名 (confirm) | paused(4)暂停 |
+| 疑似卡住 | 超阈值无事件(派生) | `? 会话名 (no activity)` | indeterminate(3)滚动 |
+| 请求出错 | after_provider_response >= 400 | `× 会话名 (HTTP 429)` | error(2)变红 |
+| 会话更名 | /name、RPC 或 setSessionName | **主文本更新为新会话名** | 不变 |
 
-优先级(进度判定):waiting > error > stalled > tool > working > idle。
+进度优先级:waiting > error > stalled > tool > working > idle。
 
 ## 架构
 
 五个模块,纯逻辑与副作用分离:
 
-- `extensions/tab-status.ts` — 入口:环境守卫(非 TTY/Warp/显式关闭)、标题写入(仅 session_start / session_info_changed 两次)、事件接线(状态机驱动进度);标题/进度直写 stdout(与 pi-tui 同路径),事件处理全程 try/catch
+- `extensions/tab-status.ts` — 入口:环境守卫(非 TTY/Warp/显式关闭)、标题渲染 ticker(仅标题变化才写)、事件接线驱动状态机与进度;标题/进度直写 stdout(与 pi-tui 同路径),tick 与事件全程 try/catch
 - `extensions/tab-status/state.ts` — 纯状态机:pi 事件归约为 idle/working/tool/waiting 相位,跟踪活动时间戳与错误上下文(零 pi 依赖,可单测)
 - `extensions/tab-status/view.ts` — 有效视图派生:卡住由活动时间派生(新事件自动恢复),优先级归约
-- `extensions/tab-status/render.ts` — 纯渲染:shell 标识探测 + OSC 9;4 进度序列(无字形/无动画——标题静态是本设计的核心)
+- `extensions/tab-status/render.ts` — 纯渲染:字形(旋转帧/闪烁帧/状态字形)、shell 标识探测、OSC 9;4 进度序列
 - `extensions/tab-status/debug.ts` — 文件式调试日志(touch `~/.pi/agent/tab-status-debug`)
 
 设计取舍:
-- **标题静态 + 任务栏动态**:避免 Cmder 在高频标题更新下的渲染冻结(实测重启恢复);同时不丢失活动可视性
-- **会话名即身份**:多开场景按名认窗口,与 pi 会话选择器共用同一名字体系
-- 状态机仍保留卡住/错误上下文,供进度语义与未来扩展用
+- **字形动态 + 命名静态**:状态字形随会话内状态切换,命名部分固定为会话名——多开认窗口不迷路,动画不丢
+- **会话名即身份**:标题主文本为会话名,与 pi 会话选择器共用同一名字体系
+- 状态机保留卡住/错误上下文,供字形与进度语义使用
 
 ## 开发
 
 ```bash
 npm test                 # node --test:state + render 单测
-npm run smoke            # 端到端冒烟:mock pi 走完整生命周期,断言标题静态与进度切换
+npm run smoke            # 端到端冒烟:mock pi 走完整生命周期,断言字形切换 + 命名固定
 bash setup.sh --test     # 测试通过后部署到 ~/.pi/agent/extensions/
 ```
 
