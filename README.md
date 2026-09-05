@@ -2,7 +2,7 @@
 
 **English | [简体中文](./README.zh-CN.md)**
 
-A terminal tab-status extension for the [pi coding agent](https://github.com/earendil-works/pi-coding-agent): prepends a status glyph to your "original" tab title (generating / running a tool / waiting for confirmation / possibly stalled / error / idle) and mirrors progress to the Windows taskbar.
+A terminal extension for the [pi coding agent](https://github.com/earendil-works/pi-coding-agent) that pins the tab title to the **current session name** (static — no per-state flicker) and mirrors activity to the Windows taskbar via OSC 9;4 progress.
 
 ## Contents
 
@@ -16,9 +16,9 @@ A terminal tab-status extension for the [pi coding agent](https://github.com/ear
 
 ## Background
 
-Running multiple pi sessions in Windows terminals (Cmder / Windows Terminal), you cannot tell from the tab strip what each session is doing: running, waiting for confirmation, retrying after an error, or done. This extension prefixes the tab title with a status glyph while leaving the rest of the title as-is (the launching shell's label, e.g. Windows PowerShell).
+When running several pi sessions in Windows terminals (Cmder / Windows Terminal), you want to tell at a glance which tab is which session. This extension pins the tab title to the **session name** (set via `/name`; unnamed sessions fall back to the launching shell's label, e.g. `Windows PowerShell`). The title stays static for the whole session — it only changes when you rename the session — which also sidesteps high-frequency title writes (Cmder tab rendering occasionally freezes under them; a restart recovers) and eliminates flicker.
 
-The generating state uses fixed-width rotating frames (◐◓◑◒, Claude Code style) to convey "thinking". If your terminal's tab rendering misbehaves under high-frequency title updates (Cmder occasionally freezes; restarting the terminal recovers), raise the frame interval via `PI_TAB_STATUS_SPINNER_MS`.
+Activity still gets surfaced through the **Windows taskbar progress** (OSC 9;4, ConEmu protocol): scrolling while generating / running a tool / possibly stalled, paused while waiting for you, red on request error, cleared when idle — full visibility without touching the title.
 
 ## Install
 
@@ -29,88 +29,67 @@ git clone https://github.com/Zzz210s/pi-tab-status.git ~/pi-tab-status
 bash ~/pi-tab-status/setup.sh
 ```
 
-Restart pi (or run /reload inside pi) to activate. If you manage pi extensions via your own dotfiles/config repo, call this repo's `setup.sh` from your deploy script (idempotent).
+Restart pi (or run `/reload` inside pi) to activate. If you manage pi extensions via your own dotfiles/config repo, call this repo's `setup.sh` from your deploy script (idempotent).
 
 ## Usage
 
-The extension activates automatically. Tab title = status glyph + shell label (PowerShell example):
+The extension activates automatically. **Tab title = current session name** (falls back to the shell label when unnamed):
 
-- `· Windows PowerShell`: idle (fresh session/reload, visible immediately)
-- Rotating half-circle glyphs (`◐◓◑◒`) + `Windows PowerShell`: model generating; taskbar progress scrolls in sync
-- A blinking underscore (`_` flashing on/off, terminal-cursor style) + `Windows PowerShell (confirm)`: waiting for user confirmation/input (e.g. permission-gate dialogs)
-- `▸ Windows PowerShell (bash)`: a tool is executing (triangle = "executing", distinct from the spinner)
-- `? Windows PowerShell (no activity)`: possibly stalled (no events beyond a threshold; may append `, HTTP 429`)
-- `× Windows PowerShell (HTTP 429)`: provider request failed; taskbar progress turns red
-- On pi exit the title reverts to the plain shell label
+1. Name the session: run `/name <name>` in pi (or `setSessionName` via the API) — the title updates immediately and then stays fixed
+2. Watch the taskbar for activity: scrolling while working, paused while waiting for you, red on error, cleared when idle
+3. On pi exit the title reverts to the shell label
 
-Also:
-
-- Cmder (ConEmu) title bar and Windows Terminal taskbar show progress: indeterminate while working, paused while waiting for the user, red on error, cleared when idle
-- In Warp the extension steps aside automatically ([pi-warp](https://github.com/capyup/pi-warp) takes over); pipe/RPC mode (non-TTY) never activates
+> The session name also appears in pi's session selector, replacing the first message.
 
 ## Configuration
 
 All via environment variables, no config file:
 
 | Variable | Default | Description |
-| --- | --- | --- |
-| `PI_TAB_STATUS_STALL_MS` | `15000` | Stall threshold: no events for this long while working/tooling shows `?` |
-| `PI_TAB_STATUS_BASE` | auto | Base title text; detected from the launching environment (Windows PowerShell / Git Bash / bash) |
-| `PI_TAB_STATUS_SPINNER_MS` | `120` | Spinner frame interval (ms); also the status-check period |
-| `PI_TAB_STATUS_BLINK_MS` | `600` | Waiting-state blink interval (underscore/space alternate, same width) |
-| `PI_TAB_STATUS_PROGRESS` | on | `0` disables OSC progress writes, keeping only the title |
-| `PI_TAB_STATUS` | on | `0` disables the extension entirely |
-| `PI_TAB_STATUS_DEBUG` | off | `1` (or touch `~/.pi/agent/tab-status-debug`) enables a file log for troubleshooting |
-
-Note: keep pi's built-in `terminal.showTerminalProgress` off (default) - this extension owns the progress sequences and double writes must be avoided.
+|---|---|---|
+| `PI_TAB_STATUS_BASE` | auto | Title text when the session has no name (detected from the launching shell: Windows PowerShell / Git Bash / bash) |
+| `PI_TAB_STATUS_STALL_MS` | `15000` | Stall threshold: no events for this long while working/tooling marks progress as "possibly stalled" (still scrolling) |
+| `PI_TAB_STATUS_PROGRESS` | `on` | `0` disables OSC progress writes, keeping only the title |
+| `PI_TAB_STATUS` | `on` | `0` disables the extension entirely |
+| `PI_TAB_STATUS_DEBUG` | `off` | `1` (or `touch ~/.pi/agent/tab-status-debug`) enables a file log for troubleshooting |
 
 ## Status Reference
 
-| State | Trigger (pi event) | Title glyph | OSC progress |
-| --- | --- | --- | --- |
-| idle / done | `agent_settled` / `session_start` | `·` | clear (0) |
-| generating | `agent_start` / `message_update` | `◐◓◑◒` spin | indeterminate (3) |
-| tool running | `tool_execution_start` | `▸` + tool name | indeterminate (3) |
-| waiting for user | `ui_prompt_start` / `ui_prompt_end` | `_` blinking (alternates with a space) | paused (4) |
-| possibly stalled | no events past threshold (derived) | `?` | indeterminate (3) |
-| request error | `after_provider_response` status >= 400 | `×` + status code | error (2) |
+| State | Trigger (pi event) | Tab title | Taskbar progress (OSC 9;4) |
+|---|---|---|---|
+| idle / done | agent_settled / session_start | unchanged (session name) | clear (0) |
+| generating | agent_start / message_* | unchanged (session name) | indeterminate (3) scrolling |
+| tool running | tool_execution_* | unchanged (session name) | indeterminate (3) scrolling |
+| waiting for user | ui_prompt_start | unchanged (session name) | paused (4) |
+| possibly stalled | no events past threshold (derived) | unchanged (session name) | indeterminate (3) scrolling |
+| request error | after_provider_response >= 400 | unchanged (session name) | error (2) red |
+| session renamed | /name, RPC, or setSessionName | **updates to the new name** (the only change) | unchanged |
 
-Priority: waiting for user > stalled > error > tool running > generating > idle. Stalled and error can combine (`? ... (no activity, HTTP 429)`).
+Progress priority: waiting > error > stalled > tool > working > idle.
 
 ## Architecture
 
-Five modules, pure logic separated from side effects (same style as the chrome-dev / codegraph extensions):
+Five modules, pure logic separated from side effects:
 
-- `extensions/tab-status/state.ts` - pure state machine: reduces pi events into phases (idle/working/tool/waiting), tracks activity timestamps and error context. Zero pi dependencies, unit-testable.
-- `extensions/tab-status/view.ts` - effective-view derivation: phase + time -> render view; the stalled state is derived from activity time (not stored in the machine) so a new event recovers automatically; owns priority resolution.
-- `extensions/tab-status/render.ts` - pure rendering: view -> title string, spinner frames, blink frames, shell-label detection, OSC progress sequences. All glyphs are non-emoji monospace characters.
-- `extensions/tab-status/debug.ts` - file-based debug log (toggle: touch `~/.pi/agent/tab-status-debug`).
-- `extensions/tab-status.ts` - entry: environment guards (non-TTY/Warp/explicit off), event wiring, a single ticker (title written only when the string changes, progress only on state switches); title/progress write straight to stdout (same channel as pi-tui, bypassing the ctx.ui chain); every tick wrapped in try/catch.
+- `extensions/tab-status.ts` — entry: environment guards (non-TTY / Warp / explicit off), title writes (only on `session_start` and `session_info_changed`), event wiring driving the progress state machine; title/progress write straight to stdout (same channel as pi-tui), every handler wrapped in try/catch
+- `extensions/tab-status/state.ts` — pure state machine: reduces pi events into idle/working/tool/waiting phases, tracks activity timestamps and error context (zero pi dependencies, unit-testable)
+- `extensions/tab-status/view.ts` — effective-view derivation: stalled is derived from activity time (a new event recovers automatically); owns priority resolution
+- `extensions/tab-status/render.ts` — pure rendering: shell-label detection + OSC 9;4 progress sequences (no glyphs, no animation — the static title is the point)
+- `extensions/tab-status/debug.ts` — file-based debug log (toggle: `touch ~/.pi/agent/tab-status-debug`)
 
-Key trade-offs (from surveying and testing similar open-source projects):
-
-- **No task summary, no external watcher**: the title stays "original shell label + status glyph"; external watchers (herdr/tmux approaches) have no API to read tab titles in Windows Terminal or Cmder, so in-process driving is the only viable path.
-- **Rotation restored with a safety valve**: the generating state rotates spinner frames; if a terminal's tab rendering ever misbehaves under sustained high-frequency OSC 0 writes (Cmder occasionally froze in testing; recovery = restart), raise the frame interval via `PI_TAB_STATUS_SPINNER_MS` instead of losing the animation.
-- **Stall detection uses in-process event timestamps** rather than polling session files (tmux-plugin style): zero latency, zero IO; `before_provider_request` counts as activity (waiting for first byte is not a stall), and the error display persists during provider retry backoff.
+Design trade-offs:
+- **Static title + dynamic taskbar**: avoids Cmder's rendering freeze under high-frequency title updates (measured; recovery = terminal restart) without losing activity visibility
+- **Session name as identity**: in multi-window setups you recognize windows by name, sharing the same naming scheme as pi's session selector
+- The state machine still tracks stall/error context for progress semantics and future use
 
 ## Development
 
 ```bash
-npm test          # node --test, 26 cases (state machine + view + render)
-npm run smoke     # end-to-end entry smoke: mock pi walks a full event cycle, prints the title timeline
-bash setup.sh --test   # deploy to ~/.pi/agent/extensions/ after tests pass
+npm test                 # node --test: state + render unit tests
+npm run smoke            # end-to-end smoke: mock pi walks a full lifecycle, asserts static title + progress transitions
+bash setup.sh --test     # deploy to ~/.pi/agent/extensions/ after tests pass
 ```
 
-Deployment targets: `~/.pi/agent/extensions/tab-status.ts` (entry) and `~/.pi/agent/extensions/tab-status/` (modules). After changes, /reload hot-reloads.
+Deployment targets: `~/.pi/agent/extensions/tab-status.ts` (entry) and `~/.pi/agent/extensions/tab-status/` (modules). After changes, `/reload` hot-reloads.
 
-Troubleshooting "the title never changes": touch `~/.pi/agent/tab-status-debug`, reload, reproduce, then read `~/.pi/agent/tab-status-debug.log` (every title write/exception is logged; if the log is writing but the tab does not move, it is terminal-side rendering - restart the tab).
-
-Raising the threshold example: for compile-heavy projects, raise the stall threshold to 10 minutes:
-
-```bash
-export PI_TAB_STATUS_STALL_MS=600000
-```
-
-## License
-
-[MIT](LICENSE)
+Troubleshooting "the title is wrong": `touch ~/.pi/agent/tab-status-debug`, reload, reproduce, then read `~/.pi/agent/tab-status-debug.log` (every title/progress write and exception is logged; if the log is writing but the tab does not move, it is terminal-side rendering — restart the tab).
