@@ -85,6 +85,16 @@ export default function tabStatus(pi: ExtensionAPI) {
   /** 统一 tick:渲染标题(字形随状态) + 进度,标题变化才写。 */
   function tick(): void {
     try {
+      // 会话名可能在 session_start 之后才就绪(恢复已有会话时尤其明显):
+      // 那时 base 已回落成 SHELL_BASE,而 session_info_changed 不会补发 ->
+      // 标签页就只剩 shell 名。每次 tick 兜底补读一次(幂等,只读内存)
+      if (base === SHELL_BASE) {
+        const late = pickBase();
+        if (late !== base) {
+          base = late;
+          lastTitle = "";
+        }
+      }
       const now = Date.now();
       const view = effectiveView(machine.snapshot(), now, STALL_MS);
       const title = renderTitle(view, base, now, SPINNER_MS, BLINK_MS);
